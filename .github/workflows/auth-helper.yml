@@ -22,9 +22,9 @@ jobs:
           P=https://hourbox-63cd5.firebaseapp.com
           mkdir -p __/auth __/firebase
           get() { # get <url path> <file> <required|optional>
-            code=$(curl -sSL -o "$2" -w "%{http_code}" "$P$1")
+            code=$(curl -sSL -o "$2.tmp" -w "%{http_code}" "$P$1")
             echo "$code $1"
-            if [ "$code" != "200" ]; then rm -f "$2"; [ "$3" = required ] && exit 1; fi
+            if [ "$code" = "200" ]; then mv "$2.tmp" "$2"; else rm -f "$2.tmp"; [ "$3" = required ] && exit 1; fi
             return 0
           }
           # GitHub Pages serves /__/auth/handler from handler.html
@@ -33,6 +33,7 @@ jobs:
           get /__/auth/iframe         __/auth/iframe.html     required
           get /__/auth/iframe.js      __/auth/iframe.js       required
           get /__/auth/experiments.js __/auth/experiments.js  optional
+          # Firebase only serves init.json for projects using Firebase Hosting; otherwise the copy in this repo is kept
           get /__/firebase/init.json  __/firebase/init.json   optional
           ls -la __/auth __/firebase
           grep -o 'src="[^"]*"' __/auth/handler.html __/auth/iframe.html || true
