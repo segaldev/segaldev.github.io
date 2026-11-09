@@ -21,14 +21,21 @@ jobs:
           set -euo pipefail
           P=https://hourbox-63cd5.firebaseapp.com
           mkdir -p __/auth __/firebase
+          get() { # get <url path> <file> <required|optional>
+            code=$(curl -sSL -o "$2" -w "%{http_code}" "$P$1")
+            echo "$code $1"
+            if [ "$code" != "200" ]; then rm -f "$2"; [ "$3" = required ] && exit 1; fi
+            return 0
+          }
           # GitHub Pages serves /__/auth/handler from handler.html
-          curl -fsSL "$P/__/auth/handler"        -o __/auth/handler.html
-          curl -fsSL "$P/__/auth/handler.js"     -o __/auth/handler.js
-          curl -fsSL "$P/__/auth/experiments.js" -o __/auth/experiments.js
-          curl -fsSL "$P/__/auth/iframe"         -o __/auth/iframe.html
-          curl -fsSL "$P/__/auth/iframe.js"      -o __/auth/iframe.js
-          curl -fsSL "$P/__/firebase/init.json"  -o __/firebase/init.json
+          get /__/auth/handler        __/auth/handler.html    required
+          get /__/auth/handler.js     __/auth/handler.js      required
+          get /__/auth/iframe         __/auth/iframe.html     required
+          get /__/auth/iframe.js      __/auth/iframe.js       required
+          get /__/auth/experiments.js __/auth/experiments.js  optional
+          get /__/firebase/init.json  __/firebase/init.json   optional
           ls -la __/auth __/firebase
+          grep -o 'src="[^"]*"' __/auth/handler.html __/auth/iframe.html || true
       - name: Commit any changes
         run: |
           git config user.name "hourbox-bot"
