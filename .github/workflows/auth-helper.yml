@@ -1,5 +1,10 @@
 name: Refresh Firebase sign-in helper
 
+# Keeps the copy of Firebase's sign-in helper in /__/auth/ up to date.
+# Sign-in works from the committed files even if this never runs again.
+# It never fails: if Firebase can't be reached or a file looks wrong,
+# the current files are kept and the run ends quietly.
+
 on:
   push:
     branches: [main]
@@ -17,29 +22,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download the helper files from Firebase
+        id: dl
         run: |
-          set -euo pipefail
+          set -uo pipefail
           P=https://hourbox-63cd5.firebaseapp.com
-          mkdir -p __/auth __/firebase
-          get() { # get <url path> <file> <required|optional>
-            code=$(curl -sSL -o "$2.tmp" -w "%{http_code}" "$P$1")
+          T=$(mktemp -d)
+          ok=1
+          get() { # get <url path> <file name in temp dir>
+            code=$(curl -sSL --retry 3 --max-time 30 -o "$T/$2" -w "%{http_code}" "$P$1" || echo 000)
             echo "$code $1"
-            if [ "$code" = "200" ]; then mv "$2.tmp" "$2"; else rm -f "$2.tmp"; [ "$3" = required ] && exit 1; fi
-            return 0
+            [ "$code" = "200" ] && [ -s "$T/$2" ] || ok=0
           }
-          # GitHub Pages serves /__/auth/handler from handler.html
-          get /__/auth/handler        __/auth/handler.html    required
-          get /__/auth/handler.js     __/auth/handler.js      required
-          get /__/auth/iframe         __/auth/iframe.html     required
-          get /__/auth/iframe.js      __/auth/iframe.js       required
-          get /__/auth/experiments.js __/auth/experiments.js  optional
-          # Firebase only serves init.json for projects using Firebase Hosting; otherwise the copy in this repo is kept
-          get /__/firebase/init.json  __/firebase/init.json   optional
-          ls -la __/auth __/firebase
-          grep -o 'src="[^"]*"' __/auth/handler.html __/auth/iframe.html || true
+          get /__/auth/handler        handler.html
+          get /__/auth/handler.js     handler.js
+          get /__/auth/iframe         iframe.html
+          get /__/auth/iframe.js      iframe.js
+          get /__/auth/experiments.js experiments.js
+          # sanity checks: the pages must still load their scripts
+          grep -q 'handler.js' "$T/handler.html" 2>/dev/null || ok=0
+          grep -q 'iframe.js' "$T/iframe.html" 2>/dev/null || ok=0
+          if [ "$ok" = 1 ]; then
+            mkdir -p __/auth
+            cp "$T"/handler.html "$T"/handler.js "$T"/iframe.html "$T"/iframe.js "$T"/experiments.js __/auth/
+            echo "Downloaded a complete, valid set."
+          else
+            echo "::notice::Firebase helper not refreshed this time; keeping the current files (sign-in is unaffected)."
+          fi
+          # __/firebase/init.json is kept in this repo: Firebase only serves it for projects using Firebase Hosting.
       - name: Commit any changes
         run: |
           git config user.name "hourbox-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add __
-          if git diff --cached --quiet; then echo "No changes"; else git commit -m "Update Firebase sign-in helper" && git push; fi
+          if git diff --cached --quiet; then echo "No changes"; else git commit -m "Update Firebase sign-in helper" && git push || echo "::notice::Couldn't save the update; keeping the current files."; fi
